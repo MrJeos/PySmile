@@ -7,6 +7,7 @@ import json
 import struct
 import logging
 import collections
+import sys
 
 from pysmile.constants import *
 from pysmile import util
@@ -15,10 +16,13 @@ log = logging.getLogger()
 if not log.handlers:
     log.addHandler(logging.NullHandler())
 
+log.addHandler(logging.StreamHandler(sys.stdout))
+log.setLevel(logging.DEBUG)
+
 __author__ = 'Jonathan Hosmer'
 
 
-class SMILEDecodeError(StandardError):
+class SMILEDecodeError(Exception):
     pass
 
 
@@ -42,9 +46,9 @@ class SmileHeader(object):
 
 class DecodeState(object):
     def __init__(self, string):
-        if isinstance(string, unicode):
-            string = string.encode('UTF-8')
-        self.s = bytearray(string)
+        # if isinstance(string, unicode):
+            # string = string.encode('UTF-8')
+        self.s = string
         """Input"""
 
         self.out = []
@@ -95,12 +99,12 @@ class DecodeState(object):
 
     def pull_bits(self, n):
         ret_s = bytearray()
-        for _ in xrange(abs(n)):
+        for _ in range(abs(n)):
             byt = self.pull_byte()
             if byt is None:
                 break
             ret_s.append(byt)
-        return ret_s
+        return ret_s.decode()
 
     def write(self, *args):
         if args:
@@ -111,7 +115,8 @@ class DecodeState(object):
 
     @staticmethod
     def _escape(o):
-        return str(o).replace('\n', r'\n').replace('"', r'\"')
+        # return str(o).replace('\n', r'\n').replace('"', r'\"')
+        return o.decode().replace('\n', r'\n').replace('"', r'\"')
 
     def save_key_string(self, key_str):
         log.debug('key_str: {!r}'.format(key_str))
@@ -282,15 +287,15 @@ def decode(string):
             elif 0x2C <= byt <= 0x3F:
                 # Reserved for future use
                 log.warn('Reserved: 0x2C <= value <= 0x3F')
-            elif 0x40 <= byt <= 0x5F or 0x80 <= byt <= 0x9F:
-                # Tiny ASCII/Unicode
-                log.debug('Token: Tiny ASCII/Unicode')
-                smile_value_length = (byt & 0x1F) + 1
+            elif 0x40 <= byt <= 0x7F:
+                # Tiny/short ASCII
+                log.debug('Token: Tiny/short ASCII')
+                smile_value_length = (byt & 0x3F) + 1
                 state.copy_value_string(smile_value_length)
-            elif 0x60 <= byt <= 0x7F or 0xA0 <= byt <= 0xBF:
-                # Small ASCII/Unicode
-                log.debug('Token: Small ASCII/Unicode')
-                smile_value_length = (byt & 0x1F) + 33
+            elif 0x80 <= byt <= 0xBF:
+                # Tiny/short Unicode
+                log.debug('Token: Tiny/short Unicode')
+                smile_value_length = (byt & 0x3F) + 2
                 state.copy_value_string(smile_value_length)
             elif 0xC0 <= byt <= 0xDF:
                 # Small Integers
@@ -392,7 +397,7 @@ def decode(string):
                 # Short Ascii names
                 # 5 LSB used to indicate lengths from 2 to 32 (bytes == chars)
                 log.debug('Token: Short ASCII Name')
-                smile_key_length = (byt & 0x1F) + 1
+                smile_key_length = (byt & 0x3F) + 1
                 state.copy_key_string(smile_key_length)
             elif TOKEN_PREFIX_KEY_UNICODE <= byt <= TOKEN_RESERVED:
                 # Short Unicode names
@@ -441,11 +446,11 @@ if __name__ == '__main__':
     a = {'a': '1', 'b': 2, 'c': [3], 'd': -1, 'e': 4.20}
     b = decode(':)\n\x03\xfa\x80a@1\x80c\xf8\xc6\xf9\x80b\xc4\x80e(fL\x19\x04\x04\x80d\xc1\xfb')
     if a != b:
-        print repr(a)
-        print repr(b)
+        print(repr(a))
+        print(repr(b))
 
     a = {'a': {'b': {'c': {'d': ['e']}}}}
     b = decode(':)\n\x03\xfa\x80a\xfa\x80b\xfa\x80c\xfa\x80d\xf8@e\xf9\xfb\xfb\xfb\xfb')
     if a != b:
-        print repr(a)
-        print repr(b)
+        print(repr(a))
+        print(repr(b))
